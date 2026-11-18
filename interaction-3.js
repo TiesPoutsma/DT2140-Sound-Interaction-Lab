@@ -1,18 +1,14 @@
 //==========================================================================================
-// AUDIO SETUP
+// INTERACTION 3: the phone is shaken  ->  RAIN
 //------------------------------------------------------------------------------------------
-//
-//------------------------------------------------------------------------------------------
-// Edit just where you're asked to!
-//------------------------------------------------------------------------------------------
-//
+// Like a rain stick: shaking makes it rain, harder shaking makes heavier rain, and the rain
+// keeps falling for a moment after you stop, fading out.
 //==========================================================================================
 let dspNode = null;
 let dspNodeParams = null;
 let jsonParams = null;
 
-// Change here to ("tuono") depending on your wasm file name
-const dspName = "brass";
+const dspName = "rain";
 const instance = new FaustWasm2ScriptProcessor(dspName);
 
 // output to window or npm package module
@@ -24,8 +20,7 @@ if (typeof module === "undefined") {
     module.exports = exp;
 }
 
-// The name should be the same as the WASM file, so change tuono with brass if you use brass.wasm
-brass.createDSP(audioContext, 1024)
+rain.createDSP(audioContext, 1024)
     .then(node => {
         dspNode = node;
         dspNode.connect(audioContext.destination);
@@ -33,34 +28,33 @@ brass.createDSP(audioContext, 1024)
         const jsonString = dspNode.getJSON();
         jsonParams = JSON.parse(jsonString)["ui"][0]["items"];
         dspNodeParams = jsonParams
-        // const exampleMinMaxParam = findByAddress(dspNodeParams, "/thunder/rumble");
-        // // ALWAYS PAY ATTENTION TO MIN AND MAX, ELSE YOU MAY GET REALLY HIGH VOLUMES FROM YOUR SPEAKERS
-        // const [exampleMinValue, exampleMaxValue] = getParamMinMax(exampleMinMaxParam);
-        // console.log('Min value:', exampleMinValue, 'Max value:', exampleMaxValue);
+        dspNode.setParamValue("/rain/density", 0); // no rain until the phone is shaken
     });
 
 
 //==========================================================================================
 // INTERACTIONS
-//------------------------------------------------------------------------------------------
-//
-//------------------------------------------------------------------------------------------
-// Edit the next functions to create interactions
-// Decide which parameters you're using and then use playAudio to play the Audio
-//------------------------------------------------------------------------------------------
-//
 //==========================================================================================
 
+const STILL = 3;          // acceleration below this is hand tremor / sensor noise -> no rain
+const HARD_SHAKE = 40;    // acceleration at which the rain is heaviest
+const FADE = 0.97;        // per frame (~60 fps): how slowly the rain dies out after shaking
+let shakeEnergy = 0;
+
 function accelerationChange(accx, accy, accz) {
-    // playAudio()
+    // p5's acceleration has gravity removed: a phone held still reads ~0
+    const strength = Math.sqrt(accx * accx + accy * accy + accz * accz);
+    // follow the shake immediately when it gets stronger, fade out slowly when it stops
+    shakeEnergy = Math.max(shakeEnergy * FADE, strength);
+    playAudio(shakeEnergy);
 }
 
 function rotationChange(rotx, roty, rotz) {
 }
 
 function mousePressed() {
-    playAudio(mouseX/windowWidth)
-    // Use this for debugging from the desktop!
+    shakeEnergy = HARD_SHAKE;
+    // Use this for debugging from the desktop! (one click = one hard shake)
 }
 
 function deviceMoved() {
@@ -74,7 +68,6 @@ function deviceTurned() {
 function deviceShaken() {
     shaketimer = millis();
     statusLabels[0].style("color", "pink");
-    playAudio();
 }
 
 function getMinMaxParam(address) {
@@ -87,23 +80,18 @@ function getMinMaxParam(address) {
 
 //==========================================================================================
 // AUDIO INTERACTION
-//------------------------------------------------------------------------------------------
-//
-//------------------------------------------------------------------------------------------
-// Edit here to define your audio controls 
-//------------------------------------------------------------------------------------------
-//
 //==========================================================================================
 
-function playAudio(pressure) {
+// Set the rain density (0-1000 drops) from the shake energy
+function playAudio(energy) {
     if (!dspNode) {
         return;
     }
     if (audioContext.state === 'suspended') {
         return;
     }
-    console.log(pressure)
-    dspNode.setParamValue("/brass/blower/pressure", pressure)
+    const density = energy < STILL ? 0 : constrain(map(energy, STILL, HARD_SHAKE, 30, 1000), 0, 1000);
+    dspNode.setParamValue("/rain/density", density);
 }
 
 //==========================================================================================

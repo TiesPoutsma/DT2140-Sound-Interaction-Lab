@@ -1,18 +1,14 @@
 //==========================================================================================
-// AUDIO SETUP
+// INTERACTION 1: the phone is used as a spirit level  ->  BUBBLES
 //------------------------------------------------------------------------------------------
-//
-//------------------------------------------------------------------------------------------
-// Edit just where you're asked to!
-//------------------------------------------------------------------------------------------
-//
+// Lay the phone on a surface. The more the surface is tilted, the faster (and slightly higher)
+// the bubbles. When the surface is level, it goes silent: you can find "level" by ear.
 //==========================================================================================
 let dspNode = null;
 let dspNodeParams = null;
 let jsonParams = null;
 
-// Change here to ("tuono") depending on your wasm file name
-const dspName = "tuono";
+const dspName = "bubble";
 const instance = new FaustWasm2ScriptProcessor(dspName);
 
 // output to window or npm package module
@@ -24,8 +20,7 @@ if (typeof module === "undefined") {
     module.exports = exp;
 }
 
-// The name should be the same as the WASM file, so change tuono with brass if you use brass.wasm
-tuono.createDSP(audioContext, 1024)
+bubble.createDSP(audioContext, 1024)
     .then(node => {
         dspNode = node;
         dspNode.connect(audioContext.destination);
@@ -33,33 +28,40 @@ tuono.createDSP(audioContext, 1024)
         const jsonString = dspNode.getJSON();
         jsonParams = JSON.parse(jsonString)["ui"][0]["items"];
         dspNodeParams = jsonParams
-        // const exampleMinMaxParam = findByAddress(dspNodeParams, "/thunder/rumble");
-        // // ALWAYS PAY ATTENTION TO MIN AND MAX, ELSE YOU MAY GET REALLY HIGH VOLUMES FROM YOUR SPEAKERS
-        // const [exampleMinValue, exampleMaxValue] = getParamMinMax(exampleMinMaxParam);
-        // console.log('Min value:', exampleMinValue, 'Max value:', exampleMaxValue);
+        // The bubble model plays one bubble when it starts: keep it muted until the first real drop
+        dspNode.setParamValue("/bubble/bubble/volume", 0);
     });
 
 
 //==========================================================================================
 // INTERACTIONS
-//------------------------------------------------------------------------------------------
-//
-//------------------------------------------------------------------------------------------
-// Edit the next functions to create interactions
-// Decide which parameters you're using and then use playAudio to play the Audio
-//------------------------------------------------------------------------------------------
-//
 //==========================================================================================
 
+const LEVEL_TOLERANCE = 1;     // degrees of tilt that still count as "level" (silence)
+const MAX_TILT = 20;           // degrees: at this tilt (or more) the bubbles are fastest
+const SLOWEST_INTERVAL = 700;  // ms between bubbles when just off level
+const FASTEST_INTERVAL = 70;   // ms between bubbles at MAX_TILT
+let lastBubble = 0;
+
 function accelerationChange(accx, accy, accz) {
-    // playAudio()
 }
 
 function rotationChange(rotx, roty, rotz) {
+    // rotx = front/back tilt (beta), roty = left/right tilt (gamma). Lying flat, both are ~0.
+    const tilt = Math.sqrt(rotx * rotx + roty * roty);
+    if (tilt < LEVEL_TOLERANCE) {
+        return; // level: silence
+    }
+    const amount = constrain((tilt - LEVEL_TOLERANCE) / (MAX_TILT - LEVEL_TOLERANCE), 0, 1);
+    const interval = lerp(SLOWEST_INTERVAL, FASTEST_INTERVAL, amount);
+    if (millis() - lastBubble > interval) {
+        lastBubble = millis();
+        playAudio(lerp(400, 1200, amount)); // more tilt -> higher bubble
+    }
 }
 
 function mousePressed() {
-    playAudio()
+    playAudio(600)
     // Use this for debugging from the desktop!
 }
 
@@ -74,7 +76,6 @@ function deviceTurned() {
 function deviceShaken() {
     shaketimer = millis();
     statusLabels[0].style("color", "pink");
-    playAudio();
 }
 
 function getMinMaxParam(address) {
@@ -87,27 +88,20 @@ function getMinMaxParam(address) {
 
 //==========================================================================================
 // AUDIO INTERACTION
-//------------------------------------------------------------------------------------------
-//
-//------------------------------------------------------------------------------------------
-// Edit here to define your audio controls 
-//------------------------------------------------------------------------------------------
-//
 //==========================================================================================
 
-function playAudio() {
+// One bubble at the given frequency (Hz, 150-2000)
+function playAudio(freq) {
     if (!dspNode) {
         return;
     }
     if (audioContext.state === 'suspended') {
         return;
     }
-    // Edit here the addresses ("/thunder/rumble") depending on your WASM controls (you can see 
-    // them printed on the console of your browser when you load the page)
-    // For example if you change to a bell sound, here you could use "/churchBell/gate" instead of
-    // "/thunder/rumble".
-    dspNode.setParamValue("/thunder/rumble", 1)
-    setTimeout(() => { dspNode.setParamValue("/thunder/rumble", 0) }, 100);
+    dspNode.setParamValue("/bubble/bubble/volume", 0.7);
+    dspNode.setParamValue("/bubble/bubble/freq", freq);
+    dspNode.setParamValue("/bubble/drop", 1);
+    setTimeout(() => { dspNode.setParamValue("/bubble/drop", 0) }, 30);
 }
 
 //==========================================================================================
